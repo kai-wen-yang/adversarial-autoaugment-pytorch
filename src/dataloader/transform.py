@@ -122,8 +122,9 @@ def train_collate_fn(batch):
     
     data = torch.cat([b[0] for b in batch], dim = 0)
     label = torch.tensor([b[1] for b in batch])
+    index = torch.tensor([b[2] for b in batch])
     
-    return data,label
+    return data,label, index
 
 
 def test_collate_fn(batch):
