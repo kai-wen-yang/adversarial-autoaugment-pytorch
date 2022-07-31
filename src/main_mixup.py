@@ -65,9 +65,9 @@ if __name__ == '__main__':
     seed_everything(args.seed)
 
     conf = load_yaml(args.load_conf)
-    name = args.load_conf.split('/')[-1].split('.')[0] + "_%d"%args.seed+'_normal_'
+    name = args.load_conf.split('/')[-1].split('.')[0] + "_%d"%args.seed
     if args.mixup:
-        name = name + 'mixup'
+        name = name + '_mixup'
     logger = Logger(os.path.join(args.logdir, name))
     num_gpus = torch.cuda.device_count()
 

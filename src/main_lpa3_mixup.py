@@ -129,6 +129,7 @@ def parse_args():
     parser.add_argument('--lam', default=1, type=float, help='bound for adversarial')
     parser.add_argument('--warmup_adv', default=5, type=int, help='warm up epoch')
     parser.add_argument('--portion', default=0.5, type=float, help='portion for adv')
+    parser.add_argument('--alpha', default=0.5, type=float, help='portion for adv')
     args = parser.parse_args()
     return args
 
@@ -144,9 +145,9 @@ if __name__ == '__main__':
     seed_everything(args.seed)
 
     conf = load_yaml(args.load_conf)
-    name = args.load_conf.split('/')[-1].split('.')[0] + "_%d" % args.seed + 'lpa3'
+    name = args.load_conf.split('/')[-1].split('.')[0] + "_%d" % args.seed + '_lpa3_portion{}'.format(args.portion)
     if args.mixup:
-        name = name + 'mixup'
+        name = name + '_mixup'
     logger = Logger(os.path.join(args.logdir, name))
     num_gpus = torch.cuda.device_count()
 
@@ -201,10 +202,10 @@ if __name__ == '__main__':
                     _, targets_uadv = torch.max(logits_ori, 1)
                     flat_feat_ori = normalize_flatten_features(feat_ori)
                     prob = torch.softmax(logits_ori, dim=-1)
-                    y_w = torch.log(torch.gather(prob, 1, targets_uadv.view(-1, 1)).squeeze(dim=1))
+                    y_ori = torch.log(torch.gather(prob, 1, targets_uadv.view(-1, 1)).squeeze(dim=1))
                     at = F.kl_div(mem_logits[index].log(), prob, reduction='none').mean(dim=1)
 
-            x_adv = get_attack(model, x, targets_uadv, y_w, flat_feat_ori, args)
+            x_adv = get_attack(model, x, targets_uadv, y_ori, flat_feat_ori, args)
             with torch.no_grad():
                 l2norm = (x_adv-x).reshape(x.shape[0], -1).norm(dim=1)
             optimizer.zero_grad()

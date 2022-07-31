@@ -124,7 +124,7 @@ if __name__ == '__main__':
                                  "_%d"%args.seed+'portion{}'.format(args.portion)+'lpa3'))
     num_gpus = torch.cuda.device_count()
 
-    wandb.init(name=args.load_conf.split('/')[-1].split('.')[0] + "_%d"%args.seed+'portion{}'.format(args.portion)+'lpa3', config=args)
+    wandb.init(name=args.load_conf.split('/')[-1].split('.')[0] + "_%d"%args.seed+'_advaa_'+'lpa3_portion{}'.format(args.portion), config=args)
 
     ## DDP set print_option + initialization
     if args.local_rank > 0:

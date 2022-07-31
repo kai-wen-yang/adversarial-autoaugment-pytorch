@@ -41,10 +41,10 @@ if __name__ == '__main__':
     seed_everything(args.seed)
 
     conf = load_yaml(args.load_conf)
-    logger = Logger(os.path.join(args.logdir,args.load_conf.split('/')[-1].split('.')[0] + "_%d"%args.seed+'advaa'))
+    logger = Logger(os.path.join(args.logdir,args.load_conf.split('/')[-1].split('.')[0] + "_%d"%args.seed+'_advaa'))
     num_gpus = torch.cuda.device_count()
 
-    wandb.init(name=args.load_conf.split('/')[-1].split('.')[0] + "_%d"%args.seed+'advaa', config=args)
+    wandb.init(name=args.load_conf.split('/')[-1].split('.')[0] + "_%d"%args.seed+'_advaa', config=args)
 
     ## DDP set print_option + initialization
     if args.local_rank > 0:
