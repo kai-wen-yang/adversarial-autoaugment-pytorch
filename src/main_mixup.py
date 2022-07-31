@@ -1,4 +1,6 @@
 import argparse
+import pdb
+
 import numpy as np
 import torch
 
@@ -6,51 +8,83 @@ import sys
 from tqdm import tqdm
 from dataloader.dataloader import get_dataloader
 from torch.cuda.amp import GradScaler, autocast
-from dataloader.transform import parse_policies, MultiAugmentation
-from optimizer_scheduler import get_optimizer_scheduler
+from torch.autograd import Variable
+from torch.optim import Adam, SGD
+from torch.optim.lr_scheduler import MultiStepLR,CosineAnnealingLR
 from models import *
 from utils import *
 import wandb
+import nn
+
+
+def mixup_data(x, y, alpha=1.0, use_cuda=True):
+    '''Returns mixed inputs, pairs of targets, and lambda'''
+    if alpha > 0:
+        lam = np.random.beta(alpha, alpha)
+    else:
+        lam = 1
+
+    batch_size = x.size()[0]
+    if use_cuda:
+        index = torch.randperm(batch_size).cuda()
+    else:
+        index = torch.randperm(batch_size)
+
+    mixed_x = lam * x + (1 - lam) * x[index, :]
+    y_a, y_b = y, y[index]
+    return mixed_x, y_a, y_b, lam
+
+
+def mixup_criterion(criterion, pred, y_a, y_b, lam):
+    return lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b)
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Unofficial Implementation of Adversarial Autoaugment')
     parser.add_argument('--load_conf', type = str)
     parser.add_argument('--logdir', type = str)
-    parser.add_argument('--M', type = int)
     parser.add_argument('--seed', type = int, default = 0)
     parser.add_argument('--local_rank', type = int, default = -1)
     parser.add_argument('--amp', action='store_true')
+    parser.add_argument('--batch_size',
+                        default=128,
+                        type=int)
+    parser.add_argument('--mixup', action='store_true')
     args = parser.parse_args()
     return args
+
 
 def init_ddp(local_rank):
     if local_rank !=-1:
         torch.cuda.set_device(local_rank)
         torch.distributed.init_process_group(backend='nccl',init_method='env://')
-        
+
+
 if __name__ == '__main__':
     args = parse_args()
     seed_everything(args.seed)
 
     conf = load_yaml(args.load_conf)
-    logger = Logger(os.path.join(args.logdir,args.load_conf.split('/')[-1].split('.')[0] + "_%d"%args.seed+'advaa'))
+    name = args.load_conf.split('/')[-1].split('.')[0] + "_%d"%args.seed+'_normal_'
+    if args.mixup:
+        name = name + 'mixup'
+    logger = Logger(os.path.join(args.logdir, name))
     num_gpus = torch.cuda.device_count()
 
-    wandb.init(name=args.load_conf.split('/')[-1].split('.')[0] + "_%d"%args.seed+'advaa', config=args)
+    wandb.init(name=name, config=args)
 
     ## DDP set print_option + initialization
     if args.local_rank > 0:
         sys.stdout = open(os.devnull, 'w')
     init_ddp(args.local_rank)
-    print("EXPERIMENT:",args.load_conf.split('/')[-1].split('.')[0])
+    print("EXPERIMENT:", args.load_conf.split('/')[-1].split('.')[0])
     
-    train_sampler, train_loader, valid_loader, test_loader = get_dataloader(conf, dataroot = '../../data/', split = 0, split_idx = 0, multinode = (args.local_rank!=-1))
-    
-    controller = get_controller(conf,args.local_rank)
-    model = get_model(conf,args.local_rank)
-    (optimizer, scheduler), controller_optimizer = get_optimizer_scheduler(controller, model, conf)
-    criterion = CrossEntropyLabelSmooth(num_classes = num_class(conf['dataset']))
+    train_sampler, train_loader, valid_loader, test_loader = get_dataloader(conf, dataroot = '../../data/', split = 0, split_idx = 0, multinode = (args.local_rank!=-1), batch_size=args.batch_size)
+
+    model = get_model(conf, args.local_rank)
+    optimizer = SGD(model.parameters(), lr=conf['lr'], momentum=0.9, nesterov=True, weight_decay=conf['weight_decay'])
+    scheduler = MultiStepLR(optimizer, [60, 120, 160], gamma=0.2, last_epoch=-1, verbose=False)
+    criterion = nn.CrossEntropyLoss()
 
     if args.amp:
         scaler = GradScaler()
@@ -59,32 +93,25 @@ if __name__ == '__main__':
     for epoch in range(conf['epoch']):
         if args.local_rank >=0:
             train_sampler.set_epoch(epoch)
-        
-        Lm = torch.zeros(args.M).cuda()
-        Lm.requires_grad = False
 
         model.train()
-        controller.train()
-        policies, log_probs, entropies = controller(args.M) # (M,2*2*5) (M,) (M,) 
-        policies = policies.cpu().detach().numpy()
-        parsed_policies = parse_policies(policies)
-        
-        trfs_list = train_loader.dataset.dataset.transform.transforms 
-        trfs_list[2] = MultiAugmentation(parsed_policies)## replace augmentation into new one
-        
         train_loss = 0
         train_top1 = 0
         train_top5 = 0
         
         progress_bar = tqdm(train_loader)
-        for idx, (data,label) in enumerate(progress_bar):
+        for idx, (x, label, _) in enumerate(progress_bar):
             optimizer.zero_grad()
-            data = data.cuda()
+            x = x.cuda()
             label = label.cuda()
+
+            if args.mixup:
+                x, label_a, label_b, lam = mixup_data(x, label)
+                x, label_a, label_b = map(Variable, (x, label_a, label_b))
+
             with autocast(enabled=args.amp):
-                pred = model(data)
-                losses = [criterion(pred[i::args.M,...] ,label) for i in range(args.M)]
-                loss = torch.mean(torch.stack(losses))
+                pred = model(x)
+                loss = mixup_criterion(criterion, pred, label_a, label_b, lam) if args.mixup else criterion(pred, label)
             
             if args.amp:
                 scaler.scale(loss).backward()
@@ -94,16 +121,8 @@ if __name__ == '__main__':
                 loss.backward()
                 optimizer.step()
 
-            for i,_loss in enumerate(losses):
-                Lm[i] += reduced_metric(_loss.detach(), num_gpus, args.local_rank !=-1) / len(train_loader)
-            
-            top1 = None
-            top5 = None
-            for i in range(args.M):
-                _top1,_top5 = accuracy(pred[i::args.M,...], label, (1, 5))
-                top1 = top1 + _top1/args.M if top1 is not None else _top1/args.M
-                top5 = top5 + _top5/args.M if top5 is not None else _top5/args.M
-            
+            top1, top5 = accuracy(pred, label, (1, 5))
+
             train_loss += reduced_metric(loss.detach(), num_gpus, args.local_rank !=-1) / len(train_loader)
             train_top1 += reduced_metric(top1.detach(), num_gpus, args.local_rank !=-1) / len(train_loader)
             train_top5 += reduced_metric(top5.detach(), num_gpus, args.local_rank !=-1) / len(train_loader)
@@ -112,16 +131,6 @@ if __name__ == '__main__':
             step += 1
 
         model.eval()
-        controller.train()
-        controller_optimizer.zero_grad()
-        
-        normalized_Lm = (Lm - torch.mean(Lm))/(torch.std(Lm) + 1e-5)
-        score_loss = torch.mean(-log_probs * normalized_Lm) # - derivative of Score function
-        entropy_penalty = torch.mean(entropies) # Entropy penalty
-        controller_loss = score_loss - conf['entropy_penalty'] * entropy_penalty
-        
-        controller_loss.backward()
-        controller_optimizer.step()
         scheduler.step()
         
         valid_loss = 0.
@@ -152,23 +161,19 @@ if __name__ == '__main__':
                 'train_loss' : train_loss,
                 'train_top1' : train_top1,
                 'train_top5' : train_top5,
-                'controller_loss' : controller_loss.item(),
-                'score_loss' : score_loss.item(),
-                'entropy_penalty' : entropy_penalty.item(),
                 'valid_loss' : valid_loss,
                 'valid_top1' : valid_top1,
                 'valid_top5' : valid_top5,
-                'policies' : parsed_policies,
             }
         )
 
         wandb.log({'train/acc': train_top1,
                    'test/acc': valid_top1,
-                   'train/loss_ori': loss_ori,
+                   'train/loss_ori': train_loss,
                    })
 
         if args.local_rank <= 0:
             logger.save_model(model,epoch)
-        logger.info(epoch,['train_loss','train_top1','train_top5','valid_loss','valid_top1','valid_top5','controller_loss'])
+        logger.info(epoch,['train_loss','train_top1','train_top5','valid_loss','valid_top1','valid_top5',])
     
         logger.save_logs()
