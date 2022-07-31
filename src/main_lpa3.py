@@ -162,6 +162,7 @@ if __name__ == '__main__':
         trfs_list = train_loader.dataset.dataset.transform.transforms 
         trfs_list[2] = MultiAugmentation_WithOrigin(parsed_policies)## replace augmentation into new one
 
+        train_loss_adv_ori = 0
         train_loss_adv = 0
         train_loss = 0
         train_top1 = 0
@@ -194,6 +195,7 @@ if __name__ == '__main__':
                 loss_ori = torch.mean(torch.stack(losses))
 
                 mask = ((mem_tc[index]).lt(threshold))
+                loss_adv_ori = F.cross_entropy(pred_adv, label)
                 loss_adv = (F.cross_entropy(pred_adv, label, reduction='none')*mask).mean()
 
                 mem_tc[index] = 0.01 * mem_tc[index] - 0.99 * at #update memory of time consistency
@@ -222,6 +224,7 @@ if __name__ == '__main__':
                 top1 = top1 + _top1/args.M if top1 is not None else _top1/args.M
                 top5 = top5 + _top5/args.M if top5 is not None else _top5/args.M
 
+            train_loss_adv_ori += reduced_metric(loss_adv_ori.detach(), num_gpus, args.local_rank != -1) / len(train_loader)
             train_loss_adv += reduced_metric(loss_adv.detach(), num_gpus, args.local_rank != -1) / len(train_loader)
             train_loss += reduced_metric(loss_ori.detach(), num_gpus, args.local_rank !=-1) / len(train_loader)
             train_top1 += reduced_metric(top1.detach(), num_gpus, args.local_rank !=-1) / len(train_loader)
@@ -298,6 +301,7 @@ if __name__ == '__main__':
                    'test/acc': valid_top1,
                    'train/loss_ori': train_loss,
                    'train/loss_adv': train_loss_adv,
+                   'train/loss_adv_ori': train_loss_adv_ori,
                    })
 
         if args.local_rank <= 0:
