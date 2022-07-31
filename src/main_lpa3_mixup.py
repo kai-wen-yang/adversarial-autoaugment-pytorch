@@ -251,8 +251,8 @@ if __name__ == '__main__':
                 'Step: {}. LR : {:.5f}. Epoch: {}/{}. Iteration: {}/{}. Train_Loss : {:.5f}'.format(step,optimizer.param_groups[0]['lr'], epoch,conf['epoch'],idx + 1,len(train_loader),loss.item()))
             step += 1
 
-            y_adv = (torch.gather(pred_adv, 1, label.view(-1, 1)).squeeze(dim=1))
-            y_w = (torch.gather(pred, 1, label.view(-1, 1)).squeeze(dim=1))
+            y_adv = (torch.gather(torch.softmax(pred_adv, dim=-1), 1, label.view(-1, 1)).squeeze(dim=1))
+            y_w = (torch.gather(torch.softmax(pred, dim=-1), 1, label.view(-1, 1)).squeeze(dim=1))
             l2norm = torch.where(torch.isnan(l2norm), torch.full_like(l2norm, 0), l2norm)
 
             wandb.log({'y_adv': y_adv.mean().cpu().detach().numpy(),
