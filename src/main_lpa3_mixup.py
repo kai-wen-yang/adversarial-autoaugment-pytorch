@@ -205,6 +205,8 @@ if __name__ == '__main__':
                     at = F.kl_div(mem_logits[index].log(), prob, reduction='none').mean(dim=1)
 
             x_adv = get_attack(model, x, targets_uadv, y_w, flat_feat_ori, args)
+            with torch.no_grad():
+                l2norm = (x_adv-x).reshape(x.shape[0], -1).norm(dim=1)
             optimizer.zero_grad()
 
             if args.mixup:
@@ -224,7 +226,7 @@ if __name__ == '__main__':
                 mem_logits[index] = prob
 
                 if epoch >= args.warmup_adv:
-                    loss = loss_ori + loss_adv
+                    loss = loss_ori + args.alpha * loss_adv
                 else:
                     loss = loss_ori
 
@@ -247,6 +249,21 @@ if __name__ == '__main__':
             progress_bar.set_description(
                 'Step: {}. LR : {:.5f}. Epoch: {}/{}. Iteration: {}/{}. Train_Loss : {:.5f}'.format(step,optimizer.param_groups[0]['lr'], epoch,conf['epoch'],idx + 1,len(train_loader),loss.item()))
             step += 1
+
+            y_adv = (torch.gather(pred_adv, 1, label.view(-1, 1)).squeeze(dim=1))
+            y_w = (torch.gather(pred, 1, label.view(-1, 1)).squeeze(dim=1))
+            l2norm = torch.where(torch.isnan(l2norm), torch.full_like(l2norm, 0), l2norm)
+
+            wandb.log({'y_adv': y_adv.mean().cpu().detach().numpy(),
+                       'y_w': y_w.mean().cpu().detach().numpy(),
+                       'y_w_select': y_w[mask].mean().cpu().detach().numpy(),
+                       'y_adv_select': y_adv[mask].mean().cpu().detach().numpy(),
+                       'num': mask.sum().cpu().detach().numpy(),
+                       'his_y_adv': wandb.Histogram(y_adv[mask].cpu().detach().numpy(), num_bins=512),
+                       'his_y_w': wandb.Histogram(y_w[mask].cpu().detach().numpy(), num_bins=512),
+                       'l2_norm': torch.mean(l2norm[mask].cpu().detach()),
+                       'l2_norm_his': wandb.Histogram(l2norm[mask].cpu().detach().numpy(), num_bins=512),
+                       }, commit=False)
 
         model.eval()
         scheduler.step()
