@@ -8,7 +8,7 @@ import sys
 from tqdm import tqdm
 from dataloader.dataloader import get_dataloader
 from torch.cuda.amp import GradScaler, autocast
-from dataloader.transform import parse_policies, MultiAugmentation, MultiAugmentation_WithOrigin, clamp, mu_cifar, std_cifar
+from dataloader.transform import parse_policies, MultiAugmentation_WithOrigin, clamp, mu_cifar, std_cifar
 from optimizer_scheduler import get_optimizer_scheduler
 from models import *
 from utils import *

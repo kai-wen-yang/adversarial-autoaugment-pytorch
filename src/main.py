@@ -8,7 +8,7 @@ import sys
 from tqdm import tqdm
 from dataloader.dataloader import get_dataloader
 from torch.cuda.amp import GradScaler, autocast
-from dataloader.transform import parse_policies, MultiAugmentation
+from dataloader.transform import parse_policies, MultiAugmentation_WithOrigin
 from optimizer_scheduler import get_optimizer_scheduler
 from models import *
 from utils import *
@@ -77,20 +77,22 @@ if __name__ == '__main__':
         parsed_policies = parse_policies(policies)
         
         trfs_list = train_loader.dataset.dataset.transform.transforms 
-        trfs_list[2] = MultiAugmentation(parsed_policies)## replace augmentation into new one
+        trfs_list[2] = MultiAugmentation_WithOrigin(parsed_policies)## replace augmentation into new one
         
         train_loss = 0
         train_top1 = 0
         train_top5 = 0
         
         progress_bar = tqdm(train_loader)
-        for idx, (data,label) in enumerate(progress_bar):
+        for idx, (x,label) in enumerate(progress_bar):
             optimizer.zero_grad()
-            data = data.cuda()
+            x = x.cuda()
+            sx = torch.cat([x[i::args.M + 1, ...] for i in range(args.M)])
             label = label.cuda()
+
             with autocast(enabled=args.amp):
-                pred = model(data)
-                losses = [criterion(pred[i::args.M,...] ,label) for i in range(args.M)]
+                pred = model(sx)
+                losses = [criterion(pred[i * args.batch_size:(i + 1) * args.batch_size], label) for i in range(args.M)]
                 loss = torch.mean(torch.stack(losses))
             
             if args.amp:
@@ -107,7 +109,7 @@ if __name__ == '__main__':
             top1 = None
             top5 = None
             for i in range(args.M):
-                _top1,_top5 = accuracy(pred[i::args.M,...], label, (1, 5))
+                _top1, _top5 = accuracy(pred[i * args.batch_size:(i + 1) * args.batch_size], label, (1, 5))
                 top1 = top1 + _top1/args.M if top1 is not None else _top1/args.M
                 top5 = top5 + _top5/args.M if top5 is not None else _top5/args.M
             
