@@ -65,12 +65,7 @@ def get_attack(model, inputs, targets_u, y_ori, flat_feat_ori, args):
             constraint = y_ori - y_adv
             loss = -pip + lam * F.relu(constraint - args.bound).mean()
 
-        if args.amp:
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
-        else:
-            loss.backward()
+        loss.backward()
 
         with autocast(enabled=args.amp):
             grad = perturbations.grad.data
