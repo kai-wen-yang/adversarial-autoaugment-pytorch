@@ -14,7 +14,7 @@ from torch.optim.lr_scheduler import MultiStepLR,CosineAnnealingLR
 from models import *
 from utils import *
 import wandb
-import nn
+from torch import nn
 
 
 def mixup_data(x, y, alpha=1.0, use_cuda=True):
