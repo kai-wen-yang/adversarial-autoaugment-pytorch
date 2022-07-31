@@ -15,6 +15,7 @@ from utils import *
 import wandb
 from typing import List, Optional, Tuple, Union, cast
 import torch.nn.functional as F
+from torch.autograd import Variable
 
 
 def normalize_flatten_features(
@@ -131,8 +132,12 @@ if __name__ == '__main__':
     print("EXPERIMENT:",args.load_conf.split('/')[-1].split('.')[0]+ "_%d"%args.seed+'lpa3')
     
     train_sampler, train_loader, valid_loader, test_loader = get_dataloader(conf, dataroot = '../../data/', split = 0, split_idx = 0, multinode = (args.local_rank!=-1), batch_size=args.batch_size)
-    
-    controller = get_controller(conf,args.local_rank)
+
+    mem_logits = Variable(torch.zeros([len(train_loader.dataset.dataset), num_class(conf['dataset'])], dtype=torch.int64, requires_grad=False).cuda() + 1/num_class(conf['dataset']))
+    mem_tc = Variable(torch.zeros(len(train_loader.dataset.dataset), requires_grad=False).cuda())
+    threshold = 1
+
+    controller = get_controller(conf, args.local_rank)
     model = get_model(conf, args.local_rank, bn_adv_flag=True, bn_adv_momentum=0.01)
     (optimizer, scheduler), controller_optimizer = get_optimizer_scheduler(controller, model, conf)
     criterion = CrossEntropyLabelSmooth(num_classes = num_class(conf['dataset']))
@@ -163,9 +168,10 @@ if __name__ == '__main__':
         train_top5 = 0
 
         progress_bar = tqdm(train_loader)
-        for idx, (x,label) in enumerate(progress_bar):
+        for idx, (x,label,index) in enumerate(progress_bar):
             optimizer.zero_grad()
             x = x.cuda()
+            index = index.cuda()
             sx = torch.cat([x[i::args.M+1, ...] for i in range(args.M)])
             wx = x[args.M::args.M+1, ...]
             label = label.cuda()
@@ -177,6 +183,7 @@ if __name__ == '__main__':
                     flat_feat_ori = normalize_flatten_features(feat_ori)
                     prob = torch.softmax(logits_ori, dim=-1)
                     y_w = torch.log(torch.gather(prob, 1, targets_uadv.view(-1, 1)).squeeze(dim=1))
+                    at = F.kl_div(mem_logits[index].log(), prob, reduction='none').mean(dim=1)
 
             x_adv = get_attack(model, wx, targets_uadv, y_w, flat_feat_ori, args)
             optimizer.zero_grad()
@@ -185,7 +192,12 @@ if __name__ == '__main__':
                 pred_adv,  feat_adv = model(x_adv, adv=True, return_feature=True)
                 losses = [criterion(pred[i*args.batch_size:(i+1)*args.batch_size], label) for i in range(args.M)]
                 loss_ori = torch.mean(torch.stack(losses))
-                loss_adv = criterion(pred_adv ,label)
+
+                mask = ((mem_tc[index]).lt(threshold))
+                loss_adv = (F.cross_entropy(pred_adv, label, reduction='none')*mask).mean()
+
+                mem_tc[index] = 0.01 * mem_tc[index] - 0.99 * at #update memory of time consistency
+                mem_logits[index] = prob
 
                 if epoch >= args.warmup_adv:
                     loss = loss_ori + loss_adv
@@ -221,8 +233,9 @@ if __name__ == '__main__':
             l2norm = (x_adv - wx).reshape(
                 wx.shape[0], -1).norm(dim=1)
 
-            wandb.log({
-                       'l2_norm': torch.mean(l2norm.cpu().detach()),
+            wandb.log({'num': mask.sum().cpu().detach().numpy(),
+                       'l2_norm': torch.mean(l2norm[mask].cpu().detach()),
+                        'l2_norm_his': wandb.Histogram(l2norm[mask].cpu().detach().numpy(),num_bins=512),
                        }, commit=False)
 
         model.eval()
@@ -237,7 +250,12 @@ if __name__ == '__main__':
         controller_loss.backward()
         controller_optimizer.step()
         scheduler.step()
-        
+
+        _, indices = torch.sort(mem_tc, descending=True)
+        kt = (1-args.portion) * len(train_loader.dataset.dataset)
+        mem_tc_copy = copy.deepcopy(mem_tc)
+        threshold = mem_tc_copy[indices[int(kt)]]
+
         valid_loss = 0.
         valid_top1 = 0.
         valid_top5 = 0.
