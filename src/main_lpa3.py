@@ -132,7 +132,7 @@ if __name__ == '__main__':
     init_ddp(args.local_rank)
     print("EXPERIMENT:",args.load_conf.split('/')[-1].split('.')[0]+ "_%d"%args.seed+'lpa3')
     
-    train_sampler, train_loader, valid_loader, test_loader = get_dataloader(conf, dataroot = '../../data/', split = 0, split_idx = 0, multinode = (args.local_rank!=-1), batch_size=args.batch_size)
+    train_sampler, train_loader, valid_loader, test_loader = get_dataloader(conf, dataroot = '../data/', split = 0, split_idx = 0, multinode = (args.local_rank!=-1), batch_size=args.batch_size)
 
     mem_logits = Variable(torch.zeros([len(train_loader.dataset), num_class(conf['dataset'])], dtype=torch.int64, requires_grad=False).cuda() + 1/num_class(conf['dataset']))
     mem_tc = Variable(torch.zeros(len(train_loader.dataset), requires_grad=False).cuda())
