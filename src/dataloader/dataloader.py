@@ -9,7 +9,7 @@ from torch.utils.data import Subset, ConcatDataset
 from sklearn.model_selection import StratifiedShuffleSplit
 from .imagenet import ImageNet
 from .transform import get_basetransform, train_collate_fn, test_collate_fn
-
+from PIL import Image
 
 class Cifar10Index(datasets.CIFAR10):
     def __init__(self, root, train=True,
