@@ -134,8 +134,8 @@ if __name__ == '__main__':
     
     train_sampler, train_loader, valid_loader, test_loader = get_dataloader(conf, dataroot = '../../data/', split = 0, split_idx = 0, multinode = (args.local_rank!=-1), batch_size=args.batch_size)
 
-    mem_logits = Variable(torch.zeros([len(train_loader.dataset.dataset), num_class(conf['dataset'])], dtype=torch.int64, requires_grad=False).cuda() + 1/num_class(conf['dataset']))
-    mem_tc = Variable(torch.zeros(len(train_loader.dataset.dataset), requires_grad=False).cuda())
+    mem_logits = Variable(torch.zeros([len(train_loader.dataset), num_class(conf['dataset'])], dtype=torch.int64, requires_grad=False).cuda() + 1/num_class(conf['dataset']))
+    mem_tc = Variable(torch.zeros(len(train_loader.dataset), requires_grad=False).cuda())
     threshold = 1
 
     controller = get_controller(conf, args.local_rank)
@@ -160,7 +160,7 @@ if __name__ == '__main__':
         policies = policies.cpu().detach().numpy()
         parsed_policies = parse_policies(policies)
         
-        trfs_list = train_loader.dataset.dataset.transform.transforms 
+        trfs_list = train_loader.dataset.transform.transforms
         trfs_list[2] = MultiAugmentation_WithOrigin(parsed_policies)## replace augmentation into new one
 
         train_loss_adv_ori = 0
@@ -170,7 +170,7 @@ if __name__ == '__main__':
         train_top5 = 0
 
         progress_bar = tqdm(train_loader)
-        for idx, (x,label,index) in enumerate(progress_bar):
+        for idx, (x, label, index) in enumerate(progress_bar):
             optimizer.zero_grad()
             x = x.cuda()
             index = index.cuda()
@@ -256,7 +256,7 @@ if __name__ == '__main__':
         scheduler.step()
 
         _, indices = torch.sort(mem_tc, descending=True)
-        kt = (1-args.portion) * len(train_loader.dataset.dataset)
+        kt = (1-args.portion) * len(train_loader.dataset)
         mem_tc_copy = copy.deepcopy(mem_tc)
         threshold = mem_tc_copy[indices[int(kt)]]
 

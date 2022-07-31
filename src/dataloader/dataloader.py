@@ -11,6 +11,7 @@ from .imagenet import ImageNet
 from .transform import get_basetransform, train_collate_fn, test_collate_fn
 from PIL import Image
 
+
 class Cifar10Index(datasets.CIFAR10):
     def __init__(self, root, train=True,
                  transform=None, target_transform=None,
@@ -63,18 +64,7 @@ def get_dataloader(conf, dataroot = './dataloader/datasets', split = 0.15, split
         validset.targets = [lb for _, lb in validset.samples]
     else:
         raise Exception()
-    
-    if split > 0:
-        sss = StratifiedShuffleSplit(n_splits=5, test_size=split, random_state=0)
-        sss = sss.split(list(range(len(trainset))), trainset.labels if conf['dataset'] == 'svhn' else trainset.targets)
-        for _ in range(split_idx + 1):
-            train_idx, valid_idx = next(sss)
 
-        trainset = Subset(trainset,train_idx)
-        validset = Subset(validset,valid_idx)
-    else:
-        trainset = Subset(trainset, list(range(len(trainset.labels if conf['dataset'] == 'svhn' else trainset.targets))))
-        validset = Subset(validset,[])
     train_sampler = None
     valid_sampler = None
     test_sampler = None
