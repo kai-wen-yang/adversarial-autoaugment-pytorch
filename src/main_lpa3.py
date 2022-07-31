@@ -120,10 +120,11 @@ if __name__ == '__main__':
     seed_everything(args.seed)
 
     conf = load_yaml(args.load_conf)
-    logger = Logger(os.path.join(args.logdir,args.load_conf.split('/')[-1].split('.')[0] + "_%d"%args.seed+'lpa3'))
+    logger = Logger(os.path.join(args.logdir,args.load_conf.split('/')[-1].split('.')[0] +
+                                 "_%d"%args.seed+'portion{}'.format(args.portion)+'lpa3'))
     num_gpus = torch.cuda.device_count()
 
-    wandb.init(name=args.load_conf.split('/')[-1].split('.')[0] + "_%d"%args.seed+'lpa3', config=args)
+    wandb.init(name=args.load_conf.split('/')[-1].split('.')[0] + "_%d"%args.seed+'portion{}'.format(args.portion)+'lpa3', config=args)
 
     ## DDP set print_option + initialization
     if args.local_rank > 0:
@@ -191,7 +192,7 @@ if __name__ == '__main__':
             with autocast(enabled=args.amp):
                 pred = model(sx)
                 pred_adv,  feat_adv = model(x_adv, adv=True, return_feature=True)
-                losses = [criterion(pred[i*args.batch_size:(i+1)*args.batch_size], label) for i in range(args.M)]
+                losses = [criterion(pred[i*args.batch_size: (i+1)*args.batch_size], label) for i in range(args.M)]
                 loss_ori = torch.mean(torch.stack(losses))
 
                 mask = ((mem_tc[index]).lt(threshold))
