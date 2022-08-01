@@ -22,9 +22,9 @@ import torchvision
 
 
 def reconst_images(x_adv, strong_x):
-    grid_X = torchvision.utils.make_grid(strong_x.data, nrow=x_adv.size(0), padding=2, normalize=True)
-    grid_AdvX = torchvision.utils.make_grid(x_adv.data, nrow=x_adv.size(0), padding=2, normalize=True)
-    grid_Delta = torchvision.utils.make_grid(x_adv-strong_x.data, nrow=x_adv.size(0), padding=2, normalize=True)
+    grid_X = torchvision.utils.make_grid(strong_x[:12].data, nrow=x_adv[:12].size(0), padding=2, normalize=True)
+    grid_AdvX = torchvision.utils.make_grid(x_adv[:12].data, nrow=x_adv[:12].size(0), padding=2, normalize=True)
+    grid_Delta = torchvision.utils.make_grid(x_adv[:12]-strong_x[:12].data, nrow=x_adv[:12].size(0), padding=2, normalize=True)
     grid = torch.cat((grid_X, grid_AdvX, grid_Delta), dim=1)
     wandb.log({"Batch.jpg": [
         wandb.Image(grid)]}, commit=False)
