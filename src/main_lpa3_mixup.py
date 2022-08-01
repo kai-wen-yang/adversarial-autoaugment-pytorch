@@ -18,6 +18,16 @@ import wandb
 from typing import List, Optional, Tuple, Union, cast
 import torch.nn.functional as F
 from torch import nn
+import torchvision
+
+
+def reconst_images(x_adv, strong_x):
+    grid_X = torchvision.utils.make_grid(strong_x.data, nrow=x_adv.size(0), padding=2, normalize=True)
+    grid_AdvX = torchvision.utils.make_grid(x_adv.data, nrow=x_adv.size(0), padding=2, normalize=True)
+    grid_Delta = torchvision.utils.make_grid(x_adv-strong_x.data, nrow=x_adv.size(0), padding=2, normalize=True)
+    grid = torch.cat((grid_X, grid_AdvX, grid_Delta), dim=1)
+    wandb.log({"Batch.jpg": [
+        wandb.Image(grid)]}, commit=False)
 
 
 def mixup_data(x, y, alpha=1.0, use_cuda=True):
@@ -208,6 +218,9 @@ if __name__ == '__main__':
             x_adv = get_attack(model, x, targets_uadv, y_ori, flat_feat_ori, args)
             with torch.no_grad():
                 l2norm = (x_adv-x).reshape(x.shape[0], -1).norm(dim=1)
+                if step % 1000 ==0:
+                    if mask.sum() > 0:
+                        reconst_images(x_adv, x)
             optimizer.zero_grad()
 
             if args.mixup:
