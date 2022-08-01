@@ -219,8 +219,7 @@ if __name__ == '__main__':
             with torch.no_grad():
                 l2norm = (x_adv-x).reshape(x.shape[0], -1).norm(dim=1)
                 if step % 1000 ==0:
-                    if mask.sum() > 0:
-                        reconst_images(x_adv, x)
+                    reconst_images(x_adv, x)
             optimizer.zero_grad()
 
             if args.mixup:
